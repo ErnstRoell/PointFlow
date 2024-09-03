@@ -253,7 +253,7 @@ def main(args):
     encoder_model = load_encoder(ect_config)
     vae = load_vae(vae_config)
     model = TopologicalModelVAE(encoder_model, vae)
-    # model.vae.eval()
+    model.vae.eval()
 
     with torch.no_grad():
         if args.evaluate_recon:
