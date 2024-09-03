@@ -12,3 +12,15 @@ def normalize(pts):
 
 if __name__ == "__main__":
     normalize(torch.rand(10, 2048, 3))
+
+
+# ########################
+# ## Insert
+# ########################
+
+# out_pc = normalize(out_pc)
+# te_pc = normalize(te_pc)
+
+# ########################
+# ## End insert
+# ########################
