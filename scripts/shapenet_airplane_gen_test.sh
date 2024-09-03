@@ -1,6 +1,6 @@
 #! /bin/bash
 
-python test.py \
+python3.8 test.py \
     --cates airplane \
     --resume_checkpoint pretrained_models/gen/airplane/checkpoint.pt \
     --dims 512-512-512 \

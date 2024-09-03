@@ -13,7 +13,7 @@ ds=shapenet15k
 log_name="ae/${ds}-cate${cate}"
 data_dir="data/ShapeNetCore.v2.PC15k"
 
-python train.py \
+python3 train.py \
     --log_name ${log_name} \
     --lr ${lr} \
     --dataset_type ${ds} \

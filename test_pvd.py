@@ -11,8 +11,6 @@ import torch
 import numpy as np
 import torch.nn as nn
 
-from normalization import normalize
-
 
 def get_test_loader(args):
     _, te_dataset = get_datasets(args)
@@ -31,103 +29,21 @@ def get_test_loader(args):
     return loader
 
 
-def evaluate_recon(model, args):
-    # TODO: make this memory efficient
-    if "all" in args.cates:
-        cates = list(synsetid_to_cate.values())
-    else:
-        cates = args.cates
-    all_results = {}
-    cate_to_len = {}
-    save_dir = os.path.dirname(args.resume_checkpoint)
-    for cate in cates:
-        args.cates = [cate]
-        loader = get_test_loader(args)
-
-        all_sample = []
-        all_ref = []
-        for data in loader:
-            idx_b, tr_pc, te_pc = data["idx"], data["train_points"], data["test_points"]
-            te_pc = te_pc.cuda()  # if args.gpu is None else te_pc.cuda(args.gpu)
-            tr_pc = tr_pc.cuda()  # if args.gpu is None else tr_pc.cuda(args.gpu)
-            B, N = te_pc.size(0), te_pc.size(1)
-            out_pc = model.reconstruct(tr_pc, num_points=N)
-            m, s = data["mean"].float(), data["std"].float()
-            m = m.cuda() if args.gpu is None else m.cuda(args.gpu)
-            s = s.cuda() if args.gpu is None else s.cuda(args.gpu)
-            out_pc = out_pc * s + m
-            te_pc = te_pc * s + m
-
-            all_sample.append(out_pc)
-            all_ref.append(te_pc)
-
-        sample_pcs = torch.cat(all_sample, dim=0)
-        ref_pcs = torch.cat(all_ref, dim=0)
-
-        # print("================NORMS======================")
-        # print(ref_pcs.shape)
-        # pprint(torch.mean(ref_pcs, axis=-2))
-        # refs = ref_pcs - torch.mean(ref_pcs, axis=-2).unsqueeze(1)
-        # ref_norms = refs.norm(dim=-1).max(dim=-1)[0]
-        # print(ref_norms)
-        # print("================+++++======================")
-        # print(sample_pcs.shape)
-        # pprint(torch.mean(sample_pcs, axis=-2))
-        # samp = sample_pcs - torch.mean(sample_pcs, axis=-2).unsqueeze(1)
-        # print(samp.norm(dim=-1).max(dim=-1)[0])
-        # print("================+++++======================")
-
-        cate_to_len[cate] = int(sample_pcs.size(0))
-        print(
-            "Cate=%s Total Sample size:%s Ref size: %s"
-            % (cate, sample_pcs.size(), ref_pcs.size())
-        )
-
-        # Save it
-        np.save(
-            os.path.join(save_dir, "%s_out_smp.npy" % cate),
-            sample_pcs.cpu().detach().numpy(),
-        )
-        np.save(
-            os.path.join(save_dir, "%s_out_ref.npy" % cate),
-            ref_pcs.cpu().detach().numpy(),
-        )
-
-        results = EMD_CD(
-            sample_pcs, ref_pcs, args.batch_size, reduced=True, accelerated_cd=True
-        )
-        # results = {
-        #     k: (v.cpu().detach().item() if not isinstance(v, float) else v)
-        #     for k, v in results.items()
-        # }
-        results = {
-            k: (v.cpu().detach() if not isinstance(v, float) else v)
-            for k, v in results.items()
-        }
-        pprint(results)
-        all_results[cate] = results
-
-    # torch.save(results["MMD-EMD"], "emd.pt")
-    # Save final results
-    print("=" * 80)
-    print("All category results:")
-    print("=" * 80)
-    pprint(all_results)
-    save_path = os.path.join(save_dir, "percate_results.npy")
-    np.save(save_path, all_results)
-
-    return all_results
-
-
 def evaluate_gen(model, args):
     loader = get_test_loader(args)
     all_sample = []
+    pvd_pcs = torch.load("./pvd/samples.pth").cuda()
     all_ref = []
+    idx_start = 0 
     for data in loader:
         idx_b, te_pc, tr_pc = data["idx"], data["test_points"], data["train_points"]
         te_pc = te_pc.cuda() if args.gpu is None else te_pc.cuda(args.gpu)
         B, N = te_pc.size(0), te_pc.size(1)
-        _, out_pc = model.sample(B, N)
+
+        # Loading the smaples from pvd
+        out_pc = pvd_pcs[idx_start,idx_start+B] 
+        idx_start += B
+
 
         # denormalize
         m, s = data["mean"].float(), data["std"].float()
@@ -136,8 +52,11 @@ def evaluate_gen(model, args):
         out_pc = out_pc * s + m
         te_pc = te_pc * s + m
 
-        out_pc = normalize(out_pc)
-        te_pc = normalize(te_pc)
+        # out_pc -= out_pc.mean(dim=-2,keepdim=True)
+        # out_pc /= out_pc.norm(dim=-1,keepdim=True)
+        #
+        # te_pc -= te_pc.mean(dim=-2,keepdim=True)
+        # te_pc /= te_pc.norm(dim=-1,keepdim=True)
 
         all_sample.append(out_pc)
         all_ref.append(te_pc)
@@ -199,12 +118,12 @@ def main(args):
             res_emd_std = res_emd.std()
 
             print("===========RESULTS=============")
-            print("MMD-CD-Mean", res_cd_mean.item())
-            print("MMD-CD-STD", res_cd_std.item())
-            print("MMD-EMD-Mean", res_emd_mean.item())
-            print("MMD-EMD-STD", res_emd_std.item())
+            print("MMD-CD-Mean",res_cd_mean.item())
+            print("MMD-CD-STD",res_cd_std.item())
+            print("MMD-EMD-Mean",res_emd_mean.item())
+            print("MMD-EMD-STD",res_emd_std.item())
             print("===============================")
-            torch.save(res, "res_pointflow")
+            torch.save(res,"res_pointflow")
 
         else:
             # Evaluate generation
