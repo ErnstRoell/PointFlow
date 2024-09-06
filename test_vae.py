@@ -157,16 +157,16 @@ def evaluate_gen(model, args):
         out_pc = out_pc * s + m
         te_pc = te_pc * s + m
 
-        ########################
-        ## Insert
-        ########################
+        # ########################
+        # ## Insert
+        # ########################
 
-        out_pc = normalize(out_pc)
-        te_pc = normalize(te_pc)
+        # out_pc = normalize(out_pc)
+        # te_pc = normalize(te_pc)
 
-        ########################
-        ## End insert
-        ########################
+        # ########################
+        # ## End insert
+        # ########################
 
         all_sample.append(out_pc)
         all_ref.append(te_pc)
@@ -247,12 +247,12 @@ def main(args):
     # handles the function signatures of input and output.
 
     encoder_model = Encoder.load_from_checkpoint(
-        f"./trained_models/vae_shapenet_{args.cates[0]}.ckpt"
-    )
-    vae = VAE.load_from_checkpoint(
         f"./trained_models/ectencoder_shapenet_{args.cates[0]}.ckpt"
     )
-    model = TopologicalModelVAEScaled(encoder_model, vae)
+    vae = VAE.load_from_checkpoint(
+        f"./trained_models/vae_shapenet_{args.cates[0]}.ckpt"
+    )
+    model = TopologicalModelVAEScaled(encoder_model.cuda(), vae.cuda())
     model.vae.eval()
 
     with torch.no_grad():
