@@ -1,8 +1,8 @@
 #! /bin/bash
 
 echo "Testing the ECT Encoder reconstruction ..."
-python3 test_encoder.py \
-    --cates airplane \
+python3 test_vae.py \
+    --cates car \
     --resume_checkpoint pretrained_models/ae/airplane/checkpoint.pt \
     --dims 512-512-512 \
     --use_deterministic_encoder \

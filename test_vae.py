@@ -5,7 +5,9 @@ from metrics.evaluation_metrics import EMD_CD
 from metrics.evaluation_metrics import jsd_between_point_cloud_sets as JSD
 from metrics.evaluation_metrics import compute_all_metrics
 from collections import defaultdict
-from models.networks import PointFlow
+from models.vae import BaseModel as VAE
+from models.encoder import BaseModel as Encoder
+
 import os
 import torch
 import numpy as np
@@ -16,7 +18,7 @@ import torch.nn as nn
 ################################################################################
 
 from omegaconf import OmegaConf
-from model_wrapper import TopologicalModelVAE
+from model_wrapper import TopologicalModelVAEScaled
 from load_models import load_encoder, load_vae
 from normalization import normalize
 
@@ -70,17 +72,16 @@ def evaluate_recon(model, args):
             out_pc = out_pc * s + m
             te_pc = te_pc * s + m
 
+            # ########################
+            # ## Insert
+            # ########################
 
-            ########################
-            ## Insert
-            ########################
+            # out_pc = normalize(out_pc)
+            # te_pc = normalize(te_pc)
 
-            out_pc = normalize(out_pc)
-            te_pc = normalize(te_pc)
-
-            ########################
-            ## End insert
-            ########################
+            # ########################
+            # ## End insert
+            # ########################
 
             all_sample.append(out_pc)
             all_ref.append(te_pc)
@@ -148,7 +149,6 @@ def evaluate_gen(model, args):
 
         B, N = te_pc.size(0), te_pc.size(1)
         _, out_pc = model.sample(B, N)
-
 
         # # denormalize
         m, s = data["mean"].float(), data["std"].float()
@@ -245,14 +245,14 @@ def main(args):
 
     # Instead of PointFlow we load our own modelwrapper, that
     # handles the function signatures of input and output.
-    ect_config = OmegaConf.load(
-        f"./configs/config_encoder_shapenet_{args.cates[0]}.yaml"
-    )
-    vae_config = OmegaConf.load(f"./configs/config_vae_shapenet_{args.cates[0]}.yaml")
 
-    encoder_model = load_encoder(ect_config)
-    vae = load_vae(vae_config)
-    model = TopologicalModelVAE(encoder_model, vae)
+    encoder_model = Encoder.load_from_checkpoint(
+        f"./trained_models/vae_shapenet_{args.cates[0]}.ckpt"
+    )
+    vae = VAE.load_from_checkpoint(
+        f"./trained_models/ectencoder_shapenet_{args.cates[0]}.ckpt"
+    )
+    model = TopologicalModelVAEScaled(encoder_model, vae)
     model.vae.eval()
 
     with torch.no_grad():
