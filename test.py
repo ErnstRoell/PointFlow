@@ -1,45 +1,26 @@
-from datasets import get_datasets, synsetid_to_cate
+import json
+from datasets import get_test_loader, synsetid_to_cate
 from args import get_args
-from pprint import pprint
-from metrics.evaluation_metrics import EMD_CD
-from metrics.evaluation_metrics import jsd_between_point_cloud_sets as JSD
-from metrics.evaluation_metrics import compute_all_metrics
-from collections import defaultdict
-from models.networks import PointFlow
-import os
 import torch
-import numpy as np
 import torch.nn as nn
+from metrics.evaluation_metrics import EMD_CD
+from metrics.evaluation_metrics import compute_all_metrics
+from models.networks import PointFlow
+from models.vae import BaseModel as VAE
+from models.encoder import BaseModel as Encoder
+from model_wrapper import TopologicalModelVAE, TopologicalModelEncoder
+from models.networks import PointFlow
 
 from normalization import normalize
 
 
-def get_test_loader(args):
-    _, te_dataset = get_datasets(args)
-    if args.resume_dataset_mean is not None and args.resume_dataset_std is not None:
-        mean = np.load(args.resume_dataset_mean)
-        std = np.load(args.resume_dataset_std)
-        te_dataset.renormalize(mean, std)
-    loader = torch.utils.data.DataLoader(
-        dataset=te_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True,
-        drop_last=False,
-    )
-    return loader
-
-
+@torch.no_grad()
 def evaluate_recon(model, args):
-    # TODO: make this memory efficient
     if "all" in args.cates:
         cates = list(synsetid_to_cate.values())
     else:
         cates = args.cates
-    all_results = {}
     cate_to_len = {}
-    save_dir = os.path.dirname(args.resume_checkpoint)
     for cate in cates:
         args.cates = [cate]
         loader = get_test_loader(args)
@@ -58,72 +39,38 @@ def evaluate_recon(model, args):
             out_pc = out_pc * s + m
             te_pc = te_pc * s + m
 
+            if args.normalize:
+                te_pc, means, norms = normalize(te_pc.clone())
+                out_pc -= means
+                out_pc /= norms
+
             all_sample.append(out_pc)
             all_ref.append(te_pc)
+
+            if args.fast_run:
+                break
 
         sample_pcs = torch.cat(all_sample, dim=0)
         ref_pcs = torch.cat(all_ref, dim=0)
 
-        # print("================NORMS======================")
-        # print(ref_pcs.shape)
-        # pprint(torch.mean(ref_pcs, axis=-2))
-        # refs = ref_pcs - torch.mean(ref_pcs, axis=-2).unsqueeze(1)
-        # ref_norms = refs.norm(dim=-1).max(dim=-1)[0]
-        # print(ref_norms)
-        # print("================+++++======================")
-        # print(sample_pcs.shape)
-        # pprint(torch.mean(sample_pcs, axis=-2))
-        # samp = sample_pcs - torch.mean(sample_pcs, axis=-2).unsqueeze(1)
-        # print(samp.norm(dim=-1).max(dim=-1)[0])
-        # print("================+++++======================")
-
         cate_to_len[cate] = int(sample_pcs.size(0))
-        print(
-            "Cate=%s Total Sample size:%s Ref size: %s"
-            % (cate, sample_pcs.size(), ref_pcs.size())
-        )
-
-        # Save it
-        np.save(
-            os.path.join(save_dir, "%s_out_smp.npy" % cate),
-            sample_pcs.cpu().detach().numpy(),
-        )
-        np.save(
-            os.path.join(save_dir, "%s_out_ref.npy" % cate),
-            ref_pcs.cpu().detach().numpy(),
-        )
 
         results = EMD_CD(
             sample_pcs, ref_pcs, args.batch_size, reduced=True, accelerated_cd=True
         )
-        # results = {
-        #     k: (v.cpu().detach().item() if not isinstance(v, float) else v)
-        #     for k, v in results.items()
-        # }
         results = {
-            k: (v.cpu().detach() if not isinstance(v, float) else v)
+            ("%s" % k): (v if isinstance(v, float) else v.item())
             for k, v in results.items()
         }
-        pprint(results)
-        all_results[cate] = results
 
-    # torch.save(results["MMD-EMD"], "emd.pt")
-    # Save final results
-    print("=" * 80)
-    print("All category results:")
-    print("=" * 80)
-    pprint(all_results)
-    save_path = os.path.join(save_dir, "percate_results.npy")
-    np.save(save_path, all_results)
-
-    return all_results
+    return results, sample_pcs, ref_pcs
 
 
 def evaluate_gen(model, args):
     loader = get_test_loader(args)
     all_sample = []
     all_ref = []
-    for data in loader:
+    for i, data in enumerate(loader):
         idx_b, te_pc, tr_pc = data["idx"], data["test_points"], data["train_points"]
         te_pc = te_pc.cuda() if args.gpu is None else te_pc.cuda(args.gpu)
         B, N = te_pc.size(0), te_pc.size(1)
@@ -136,25 +83,20 @@ def evaluate_gen(model, args):
         out_pc = out_pc * s + m
         te_pc = te_pc * s + m
 
-        out_pc = normalize(out_pc)
-        te_pc = normalize(te_pc)
+        if args.normalize:
+            te_pc, means, norms = normalize(te_pc)
+            out_pc -= means
+            out_pc /= norms
 
         all_sample.append(out_pc)
         all_ref.append(te_pc)
 
+
+        if args.fast_run and i==2:
+            break
+
     sample_pcs = torch.cat(all_sample, dim=0)
     ref_pcs = torch.cat(all_ref, dim=0)
-    print(
-        "Generation sample size:%s reference size: %s"
-        % (sample_pcs.size(), ref_pcs.size())
-    )
-
-    # Save the generative output
-    save_dir = os.path.dirname(args.resume_checkpoint)
-    np.save(
-        os.path.join(save_dir, "model_out_smp.npy"), sample_pcs.cpu().detach().numpy()
-    )
-    np.save(os.path.join(save_dir, "model_out_ref.npy"), ref_pcs.cpu().detach().numpy())
 
     # Compute metrics
     results = compute_all_metrics(
@@ -164,51 +106,104 @@ def evaluate_gen(model, args):
         k: (v.cpu().detach().item() if not isinstance(v, float) else v)
         for k, v in results.items()
     }
-    pprint(results)
+    return results, sample_pcs, ref_pcs
 
-    sample_pcl_npy = sample_pcs.cpu().detach().numpy()
-    ref_pcl_npy = ref_pcs.cpu().detach().numpy()
-    jsd = JSD(sample_pcl_npy, ref_pcl_npy)
-    print("JSD:%s" % jsd)
 
+def compute_pc_metrics(sample_pcs,ref_pcs):
+    # Compute metrics
+    results = compute_all_metrics(
+        sample_pcs, ref_pcs, args.batch_size, accelerated_cd=True
+    )
+    results = {
+        k: (v.cpu().detach().item() if not isinstance(v, float) else v)
+        for k, v in results.items()
+    }
+    return results, sample_pcs, ref_pcs
 
 def main(args):
-    model = PointFlow(args)
+    # Load the model 
+    if args.model == "Encoder": 
+        print("Loading Encoder")
+        encoder_model = Encoder.load_from_checkpoint(
+            checkpoint_path=f"./trained_models/ectencoder_shapenet_{args.cates[0]}.ckpt"
+        ).cuda()
+        model = TopologicalModelEncoder(encoder_model.cuda())
+    elif args.model == "VAE":
+        print("Loading VAE")
+        encoder_model = Encoder.load_from_checkpoint(
+            checkpoint_path=f"./trained_models/ectencoder_shapenet_{args.cates[0]}.ckpt"
+        ).cuda()
+        vae = VAE.load_from_checkpoint(
+            f"./trained_models/vae_shapenet_{args.cates[0]}.ckpt"
+        ).cuda()
+        model = TopologicalModelVAE(encoder_model, vae)
+        model.vae.eval()
+    elif args.model == "PointFlow":
+        model = PointFlow(args)
 
-    def _transform_(m):
-        return nn.DataParallel(m, device_ids=[0])
+        def _transform_(m):
+            return nn.DataParallel(m, device_ids=[0])
 
-    model = model.cuda()
-    model.multi_gpu_wrapper(_transform_)
+        model = model.cuda()
+        model.multi_gpu_wrapper(_transform_)
 
-    print("Resume Path:%s" % args.resume_checkpoint)
-    checkpoint = torch.load(args.resume_checkpoint)
-    model.load_state_dict(checkpoint)
-    model.eval()
+        print("Resume Path:%s" % args.resume_checkpoint)
+        checkpoint = torch.load(args.resume_checkpoint)
+        model.load_state_dict(checkpoint)
+        model.eval()
+    else: 
+        raise ValueError()
+
 
     with torch.no_grad():
+        results = []
         if args.evaluate_recon:
-            # Evaluate reconstruction
-            res = [evaluate_recon(model, args) for _ in range(10)]
-            res_cd = torch.stack([r[args.cates[0]]["MMD-CD"] for r in res])
-            res_emd = torch.stack([r[args.cates[0]]["MMD-EMD"] for r in res])
-            res_cd_mean = res_cd.mean()
-            res_cd_std = res_cd.std()
+            for _ in range(args.num_reruns):
+                # Evaluate reconstruction
+                result, sample_pc, ref_pc = evaluate_recon(model, args)
+                result["model"] = args.model
+                result["cate"] = args.cates[0]
+                result["normalized"] = args.normalize
 
-            res_emd_mean = res_emd.mean()
-            res_emd_std = res_emd.std()
+                results.append(result)
 
-            print("===========RESULTS=============")
-            print("MMD-CD-Mean", res_cd_mean.item())
-            print("MMD-CD-STD", res_cd_std.item())
-            print("MMD-EMD-Mean", res_emd_mean.item())
-            print("MMD-EMD-STD", res_emd_std.item())
-            print("===============================")
-            torch.save(res, "res_pointflow")
+            suffix = ""
+            if args.normalize:
+                suffix = "_normalized"
+
+            with open(f"./results/{args.model}/{args.cates[0]}{suffix}.json","w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(results, f)
+            torch.save(
+                sample_pc, f"./results/{args.model}/samples_{args.cates[0]}{suffix}.pt"
+            )
+            torch.save(ref_pc, f"./results/{args.model}/ref_{args.cates[0]}{suffix}.pt")
 
         else:
-            # Evaluate generation
-            evaluate_gen(model, args)
+            if args.model == "Encoder":
+                raise ValueError()
+
+            for _ in range(args.num_reruns):
+                result, sample_pc, ref_pc = evaluate_gen(model, args)
+                result["model"] = args.model
+                result["cate"] = args.cates[0]
+                result["normalized"] = args.normalize
+                
+                results.append(result)
+             
+            suffix = ""
+            if args.normalize:
+                suffix = "_normalized"
+
+            with open(f"./results_gen/{args.model}/{args.cates[0]}{suffix}.json","w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(results, f)
+            torch.save(
+                sample_pc, f"./results_gen/{args.model}/samples_{args.cates[0]}{suffix}.pt"
+            )
+            torch.save(ref_pc, f"./results_gen/{args.model}/ref_{args.cates[0]}{suffix}.pt")
 
 
 if __name__ == "__main__":

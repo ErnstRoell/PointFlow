@@ -146,6 +146,14 @@ def add_args(parser):
                         help='Number of shapes to be sampled (for demo.py).')
     parser.add_argument('--num_sample_points', default=2048, type=int,
                         help='Number of points (per-shape) to be sampled (for demo.py).')
+    parser.add_argument('--num_reruns', default=1, type=int,
+                        help='Number of times to rerun the experiment')
+    parser.add_argument('--fast_run', action='store_true',
+                        help='Make a fast run for testing')
+    parser.add_argument('--normalize', action='store_true',
+                        help='Normalize')
+    parser.add_argument('--model', type=str, default='PointFlow',
+                        help='Model name')
 
     return parser
 

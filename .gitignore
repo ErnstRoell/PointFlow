@@ -27,7 +27,8 @@ datasets_new/
 pvd/
 runs/
 trained_models_bu/
-
+results/
+results_gen/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

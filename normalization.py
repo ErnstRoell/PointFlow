@@ -7,20 +7,8 @@ def normalize(pts):
     pts = pts - pts_means
     pts_norms = torch.norm(pts, dim=-1, keepdim=True).max(dim=-2, keepdim=True)[0]
     pts = pts / pts_norms
-    return pts
+    return pts, pts_means, pts_norms
 
 
 if __name__ == "__main__":
     normalize(torch.rand(10, 2048, 3))
-
-
-# ########################
-# ## Insert
-# ########################
-
-# out_pc = normalize(out_pc)
-# te_pc = normalize(te_pc)
-
-# ########################
-# ## End insert
-# ########################
