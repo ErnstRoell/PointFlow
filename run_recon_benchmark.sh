@@ -4,12 +4,15 @@
 
 # Categories
 declare -a arr=("airplane" "car" "chair")
-
+declare -a models=("PointFlow" "Encoder" "VAE")
 # Parameters
 num_reruns=10
-model="PointFlow"
 # fast_run="--fast_run"
 fast_run=""
+
+
+for model in "${models[@]}"
+do
 
 mkdir -p results
 rm -rf results/$model
@@ -42,4 +45,5 @@ do
         --num_reruns $num_reruns \
         --model $model \
         $fast_run
+done
 done

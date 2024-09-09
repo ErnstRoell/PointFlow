@@ -84,9 +84,8 @@ def evaluate_gen(model, args):
         te_pc = te_pc * s + m
 
         if args.normalize:
-            te_pc, means, norms = normalize(te_pc)
-            out_pc -= means
-            out_pc /= norms
+            te_pc, _, _ = normalize(te_pc)
+            out_pc, _, _ = normalize(out_pc)
 
         all_sample.append(out_pc)
         all_ref.append(te_pc)

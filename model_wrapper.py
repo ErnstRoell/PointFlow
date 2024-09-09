@@ -9,6 +9,24 @@ import torch
 
 DEVICE = "cuda:0"
 
+class ShapeNetModel:
+    def __init__(self, noise=0.0, normalized=False) -> None:
+        self.normalized = normalized
+        self.noise = noise
+    
+    @torch.no_grad()
+    def reconstruct(self, x, num_points=2048):
+        """
+        Takes in a pointcloud of the form BxPxD
+        and does a full reconstruction into
+        a pointcloud of the form BxPxD using our model.
+
+        We follow the PointFlow signature to make it compatible with
+        their framework.
+        """
+        x_noisy = x + self.noise * torch.randn_like(x)
+        return x_noisy
+
 class TopologicalModelVAE:
     def __init__(self, encoder, vae,normalized=False) -> None:
         self.encoder = encoder
@@ -74,12 +92,12 @@ class TopologicalModelEncoder:
         self.normalized = normalized
 
     def reconstruct(self, x, num_points=2048):
-        if self.normalized: 
-            x_means = torch.mean(x, axis=-2)
-            x = x - x_means.unsqueeze(1)
-
-            x_norms = torch.norm(x, dim=-1).max(axis=1)[0].reshape(-1, 1, 1)
-            x = x / x_norms
+        # if self.normalized: 
+        #     x_means = torch.mean(x, axis=-2)
+        #     x = x - x_means.unsqueeze(1)
+        #
+        #     x_norms = torch.norm(x, dim=-1).max(axis=1)[0].reshape(-1, 1, 1)
+        #     x = x / x_norms
 
 
         batch = Batch.from_data_list([Data(x=pts.view(-1, 3)) for pts in x])
@@ -88,7 +106,7 @@ class TopologicalModelEncoder:
         ect = self.encoder_model.layer(batch, batch.batch)
         encoder_pointcloud = self.encoder_model(ect).view(-1, num_points, 3)
 
-        if self.normalized: 
-            encoder_pointcloud = encoder_pointcloud * x_norms
-            encoder_pointcloud = encoder_pointcloud + x_means.unsqueeze(1)
+        # if self.normalized: 
+        #     encoder_pointcloud = encoder_pointcloud * x_norms
+        #     encoder_pointcloud = encoder_pointcloud + x_means.unsqueeze(1)
         return encoder_pointcloud

@@ -1,19 +1,18 @@
 #! /bin/bash 
 
 # Categories
-declare -a models=("PointFlow" "VAE")
+declare -a models=("VAE")
 declare -a arr=("airplane" "car" "chair")
 
 # Parameters
-num_reruns=5
+num_reruns=1
 
-fast_run="--fast_run"
 
 for model in "${models[@]}"
 do 
 
-  rm -rf results_gen/$model
-  mkdir -p results_gen/$model
+  # rm -rf results_gen/$model
+  # mkdir -p results_gen/$model
 
   # Loop over the categories 
   for cate in "${arr[@]}"
@@ -27,6 +26,6 @@ do
           --use_latent_flow \
           --num_reruns $num_reruns \
           --model $model \
-          --fast_run 
+          --normalize
   done
 done
