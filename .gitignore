@@ -17,7 +17,7 @@ metrics/PyTorchEMD
 *.ps1
 figures/
 checkpoints/
-
+archive/
 
 my_logs/
 shapenet/
@@ -29,6 +29,8 @@ runs/
 trained_models_bu/
 results/
 results_gen/
+
+results_pointflow/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
