@@ -1,7 +1,7 @@
 #! /bin/bash 
 
 # Categories
-declare -a models=("VAE")
+declare -a models=("VAE" "VAEScaled" "PointFlow")
 declare -a arr=("airplane" "car" "chair")
 
 # Parameters
@@ -11,8 +11,8 @@ num_reruns=1
 for model in "${models[@]}"
 do 
 
-  # rm -rf results_gen/$model
-  # mkdir -p results_gen/$model
+  rm -rf results_gen/$model
+  mkdir -p results_gen/$model
 
   # Loop over the categories 
   for cate in "${arr[@]}"
@@ -29,3 +29,4 @@ do
           --normalize
   done
 done
+

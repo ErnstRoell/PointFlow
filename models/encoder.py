@@ -19,6 +19,7 @@ class BaseModel(L.LightningModule):
         self.modelconfig = modelconfig
 
         self.visualization = []
+        self.validation_visualization = []
 
         self.save_hyperparameters()
 
@@ -116,35 +117,21 @@ class BaseModel(L.LightningModule):
                     ),
                 )
             ]
+
+        if batch_idx == 0 and step=="validation":
+            self.validation_visualization = [
+                (
+                    batch.x.view(
+                        -1, self.modelconfig.num_pts, self.modelconfig.num_dims
+                    ),
+                    _batch.x.view(
+                        -1, self.modelconfig.num_pts, self.modelconfig.num_dims
+                    ),
+                )
+            ]
         return loss
 
     def on_train_epoch_end(self) -> None:
-        tensorboard_logger = self.logger.experiment
-        ref_pcs, sample_pcs = self.visualization[0]
-        fig, axes = plt.subplots(nrows=3, ncols=8, figsize=(16, 6))
-        fig.tight_layout()
-        for axis, ref, pred in zip(axes.T, ref_pcs, sample_pcs):
-            pts_ref = ref.view(-1, 3)[:, [0, 2]].cpu().detach()
-            ax = axis[0]
-            ax.scatter(pts_ref[:, 0], pts_ref[:, 1], s=0.1)
-            ax.axis("off")
-
-            ax = axis[1]
-            pts_pred = pred.view(-1, 3)[:, [0, 2]].cpu().detach()
-            ax.scatter(pts_pred[:, 0], pts_pred[:, 1], s=0.1)
-            ax.axis("off")
-            ax = axis[2]
-            pts = torch.vstack([pts_pred, pts_ref])
-            ax.scatter(pts[:, 0], pts[:, 1], s=0.1)
-            ax.axis("off")
-
-        # Adding plot to tensorboard
-        tensorboard_logger.add_figure(
-            "reconstruction", plt.gcf(), global_step=self.global_step
-        )
-
-        self.visualization.clear()
-
         self.loss_layer.v = generate_uniform_directions(
                 num_thetas=self.ectlossconfig.num_thetas
             ).cuda()
@@ -152,3 +139,35 @@ class BaseModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):  # pylint: disable=arguments-differ
         return self.general_step(batch, batch_idx, "train")
+    
+    def validation_step(self, batch, batch_idx):  # pylint: disable=arguments-differ
+        with torch.no_grad():
+            loss = self.general_step(batch, batch_idx, "validation")
+
+        if self.current_epoch % 10 == 0: 
+            tensorboard_logger = self.logger.experiment
+            ref_pcs, sample_pcs = self.visualization[0]
+            fig, axes = plt.subplots(nrows=3, ncols=8, figsize=(16, 6))
+            fig.tight_layout()
+            for axis, ref, pred in zip(axes.T, ref_pcs, sample_pcs):
+                pts_ref = ref.view(-1, 3)[:, [0, 2]].cpu().detach()
+                ax = axis[0]
+                ax.scatter(pts_ref[:, 0], pts_ref[:, 1], s=0.1)
+                ax.axis("off")
+
+                ax = axis[1]
+                pts_pred = pred.view(-1, 3)[:, [0, 2]].cpu().detach()
+                ax.scatter(pts_pred[:, 0], pts_pred[:, 1], s=0.1)
+                ax.axis("off")
+                ax = axis[2]
+                pts = torch.vstack([pts_pred, pts_ref])
+                ax.scatter(pts[:, 0], pts[:, 1], s=0.1)
+                ax.axis("off")
+
+            # Adding plot to tensorboard
+            tensorboard_logger.add_figure(
+                "reconstruction", plt.gcf(), global_step=self.global_step
+            )
+
+            self.visualization.clear()
+        return loss

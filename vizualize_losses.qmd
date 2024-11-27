@@ -1,0 +1,176 @@
+---
+title: Elements in the validation set with the largest loss
+jupyter: python3
+format: 
+  html: 
+    code-fold: true
+    execute: true
+fig-width: 1
+fig-height: 1
+---
+
+```{python}
+import torch
+from torch import nn
+import torch.nn.functional as F
+import numpy as np 
+import pandas as pd
+from layers.ect import EctConfig, EctLayer
+from layers.directions import generate_uniform_directions, generate_directions
+import matplotlib.pyplot as plt
+import seaborn as sns
+from torch_geometric.data import Data, Batch
+from kaolin.metrics.pointcloud import chamfer_distance
+import pyvista as pv
+
+
+ECT_SIZE = 128
+DEVICE = "cuda:0"
+LOG_SCALE = False
+# SUFFIX="_normalized"
+SUFFIX=""
+
+pv.set_jupyter_backend('static')
+
+def plot_pcs_recon(ref_pcs,sample_pcs,jnt_pcs,offset=0):
+    max_cols = 1
+    pl = pv.Plotter(shape=(3,max_cols), window_size=[max_cols*200, 600],border=False,polygon_smoothing=True)
+
+    for col in range(max_cols):
+        points = ref_pcs[col+offset].reshape(-1, 3).detach().cpu().numpy()
+        pl.subplot(0, col)
+        actor = pl.add_points(
+            points,
+            style="points",
+            emissive=False,
+            show_scalar_bar=False,
+            render_points_as_spheres=True,
+            scalars=points[:, 2],
+            point_size=2,
+            ambient=0.2, 
+            diffuse=0.8, 
+            specular=0.8,
+            specular_power=40, 
+            smooth_shading=True
+        )
+        points = sample_pcs[col+offset].reshape(-1, 3).detach().cpu().numpy()
+        pl.subplot(1, col)
+        actor = pl.add_points(
+            points,
+            style="points",
+            emissive=False,
+            show_scalar_bar=False,
+            render_points_as_spheres=True,
+            scalars=points[:, 2],
+            point_size=2,
+            ambient=0.2, 
+            diffuse=0.8, 
+            specular=0.8,
+            specular_power=40, 
+            smooth_shading=True
+        )
+        points = jnt_pcs[col+offset].reshape(-1, 3).detach().cpu().numpy()
+        pl.subplot(2, col)
+        actor = pl.add_points(
+            points,
+            style="points",
+            emissive=False,
+            show_scalar_bar=False,
+            render_points_as_spheres=True,
+            scalars=points[:, 2],
+            point_size=2,
+            ambient=0.2, 
+            diffuse=0.8, 
+            specular=0.8,
+            specular_power=40, 
+            smooth_shading=True
+        )
+
+
+    pl.background_color = "w"
+    pl.link_views()
+    pl.camera_position = "xy"
+    pos = pl.camera.position
+    pl.camera.position = (pos[0],pos[1]+3,pos[2])
+    pl.camera.position = (3,0,0)
+    pl.camera.azimuth = 45
+    pl.camera.elevation = 30
+    # create a top down light
+    light = pv.Light(position=(0, 0, 0), positional=True,
+                    cone_angle=50, exponent=20, intensity=.2)
+    pl.add_light(light)
+    pl.camera.zoom(1.3)
+    pl.show()
+```
+
+```{python}
+losses = []
+# "Encoder","VAE","PointFlow",
+for cat in ["airplane", "chair","car"]:
+  for model in ["Encoder"]: #["ShapeNet-0","ShapeNet-005","ShapeNet-01"]:
+        sample_pcs = torch.load(f'./results/{model}/samples_{cat}{SUFFIX}.pt')
+        ref_pcs = torch.load(f'./results/{model}/ref_{cat}{SUFFIX}.pt')
+        cd_loss = chamfer_distance(sample_pcs, ref_pcs)
+        norms = (sample_pcs - sample_pcs.mean(dim=-2,keepdim=True)).norm(dim=-1).max(dim=-1)[0]
+        losses.extend([{"idx":idx,"loss":l.item(),"model":model,"cate":cat,"norm":n.item()} for idx, (n,l) in enumerate(zip(norms,cd_loss))])
+
+```
+
+```{python}
+df_losses = pd.DataFrame(losses)
+df_losses.head()
+```
+
+```{python}
+df_losses.groupby(["model","cate"]).agg({"loss":["mean","std"]}).unstack()
+```
+
+```{python}
+g = sns.FacetGrid(df_losses,col="cate",hue="model", sharex=False, sharey=False,height=2, aspect=1)
+g.map(sns.histplot,"loss",element="step",alpha=.4);
+# g.set(ylim=(0, None));
+g.add_legend()
+```
+
+```{python}
+g = sns.FacetGrid(df_losses,col="cate",hue="model", row="model", sharex=False, sharey=False)
+g.map(sns.scatterplot,"loss","norm");
+# g.set(ylim=(0, None));
+plt.show()
+```
+
+```{python}
+#| fig-cap: "Polar axis plot"
+#| fig-alt: "A line plot on a polar axis"
+#| fig-width: 3
+import numpy as np
+import matplotlib.pyplot as plt
+
+r = np.arange(0, 2, 0.01)
+theta = 2 * np.pi * r
+fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+ax.plot(theta, r)
+ax.set_rticks([0.5, 1, 1.5, 2])
+ax.grid(True)
+plt.show()
+```
+
+
+```{python}
+for model in ["Encoder","VAE","PointFlow"]:
+    for cat in ["airplane", "car", "chair"]:
+        print(80*"#")
+        print("###", model.upper(), cat.upper())
+        print(80*"#")
+        df_car = df_losses[df_losses["cate"]==cat]
+        df_idx = df_car[df_car["model"] == model].sort_values(by="loss",ascending=False) 
+        car_outlier_idx = df_idx["idx"].values.tolist()
+        sample_pcs = torch.load(f'./results/{model}/samples_{cat}{SUFFIX}.pt')
+        ref_pcs = torch.load(f'./results/{model}/ref_{cat}{SUFFIX}.pt')
+        outlier_refs = ref_pcs[car_outlier_idx]
+        outlier_smp = sample_pcs[car_outlier_idx]
+        jnt_pcs = torch.cat([outlier_smp,outlier_refs],axis=1)
+        #plot_pcs_recon(outlier_refs, outlier_smp,jnt_pcs)
+```
+
+

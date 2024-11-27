@@ -4,9 +4,10 @@
 
 # Categories
 declare -a arr=("airplane" "car" "chair")
-declare -a models=("PointFlow" "Encoder" "VAE")
+declare -a models=("Encoder" "PointFlow")
+
 # Parameters
-num_reruns=10
+num_reruns=1
 # fast_run="--fast_run"
 fast_run=""
 

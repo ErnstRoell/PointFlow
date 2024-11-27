@@ -126,8 +126,8 @@ class Uniform15KPC(Dataset):
         # Shuffle the index deterministically (based on the number of examples)
         self.shuffle_idx = list(range(len(self.all_points)))
         # TODO: HERE
-        #random.Random(38383).shuffle(self.shuffle_idx)
-        random.shuffle(self.shuffle_idx)
+        random.Random(38383).shuffle(self.shuffle_idx)
+        # random.shuffle(self.shuffle_idx)
         self.cate_idx_lst = [self.cate_idx_lst[i] for i in self.shuffle_idx]
         self.all_points = [self.all_points[i] for i in self.shuffle_idx]
         self.all_cate_mids = [self.all_cate_mids[i] for i in self.shuffle_idx]
@@ -409,7 +409,6 @@ def _get_MN40_datasets_(args, data_dir=None):
         all_points_mean=tr_dataset.all_points_mean,
         all_points_std=tr_dataset.all_points_std,
     )
-
     return tr_dataset, te_dataset
 
 
@@ -460,7 +459,7 @@ def get_datasets(args):
             normalize_std_per_axis=args.normalize_std_per_axis,
             all_points_mean=tr_dataset.all_points_mean,
             all_points_std=tr_dataset.all_points_std,
-            random_subsample=True,
+            # random_subsample=True,
         )
     elif args.dataset_type == "modelnet40_15k":
         tr_dataset, te_dataset = _get_MN40_datasets_(args)
